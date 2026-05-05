@@ -56,6 +56,8 @@ class WorkerPool:
                 latency_ms = future.result()
                 collector.record(latency_ms)
 
+    # for my env using of this workload generator makes opposite effect and prevent the queue from overloading,
+    # so I don't use it for now
     def run_with_arrival_rate(
         self,
         request_ids: list[int],

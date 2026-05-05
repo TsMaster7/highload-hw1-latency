@@ -99,16 +99,10 @@ def run_benchmark(config_path: str | Path | None = None) -> list[dict]:
         _run_condition("Parallel", workers, parallel_ids, service_time_ms)
     )
 
-    # --- Saturated (N workers, excess load with arrival rate) ---
+    # --- Saturated (N workers, just send more queries, don't involve arrival_rate logic) ---
     saturated_ids = generate_saturated(total_requests, saturated_multiplier)
-    capacity_rps = workers / (service_time_ms / 1000.0)
-    overload_rps = capacity_rps * 1.5
-    inter_arrival_ms = 1000.0 / overload_rps
     results.append(
-        _run_condition(
-            "Saturated", workers, saturated_ids, service_time_ms,
-            inter_arrival_ms=inter_arrival_ms,
-        )
+        _run_condition("Saturated", workers, saturated_ids, service_time_ms)
     )
 
     _print_report(results)
