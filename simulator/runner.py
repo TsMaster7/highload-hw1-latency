@@ -56,7 +56,7 @@ def _print_report(results: list[dict]) -> None:
 
     header = (
         f"{'Condition':<12} {'Workers':>7} {'Requests':>8} {'Rejected':>8} "
-        f"{'Mean(ms)':>9} {'p95(ms)':>9} {'Throughput':>12} {'Duration':>10}"
+        f"{'Mean(ms)':>9} {'p95(ms)':>9} {'Throughput':>14} {'Duration':>10}"
     )
     print(header)
     print("-" * len(header))
@@ -66,6 +66,26 @@ def _print_report(results: list[dict]) -> None:
             f"{r['condition']:<12} {r['workers']:>7} {r['count']:>8} "
             f"{r['rejected']:>8} {r['mean_ms']:>9.2f} {r['p95_ms']:>9.2f} "
             f"{r['throughput_rps']:>10.2f} r/s {r['duration_s']:>8.3f} s"
+        )
+
+    print()
+    print(_SEPARATOR)
+    print("LATENCY BREAKDOWN (Queue Wait + Service Time)")
+    print(_SEPARATOR)
+    print()
+
+    breakdown_header = (
+        f"{'Condition':<12} {'QueueMean':>10} {'QueueP95':>10} "
+        f"{'ServiceMean':>12} {'ServiceP95':>11} {'TotalMean':>10} {'TotalP95':>9}"
+    )
+    print(breakdown_header)
+    print("-" * len(breakdown_header))
+
+    for r in results:
+        print(
+            f"{r['condition']:<12} {r['queue_mean_ms']:>9.2f}ms {r['queue_p95_ms']:>9.2f}ms "
+            f"{r['service_mean_ms']:>11.2f}ms {r['service_p95_ms']:>10.2f}ms "
+            f"{r['mean_ms']:>9.2f}ms {r['p95_ms']:>8.2f}ms"
         )
 
     print()

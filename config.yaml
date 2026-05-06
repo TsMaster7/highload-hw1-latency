@@ -1,6 +1,6 @@
 # Benchmark configuration
 
-service_time_ms: 10        # Base simulated processing time per request (ms)
-workers: 256               # Number of concurrent workers in the pool
-total_requests: 2500       # Requests per workload condition (serial / parallel)
-saturated_multiplier: 10   # Saturated workload sends total_requests * multiplier
+service_time_ms: 10       # Base simulated processing time per request (ms)
+workers: 24               # Number of concurrent workers in the pool (optimal for 8-core system)
+total_requests: 1000      # Requests per workload condition (serial / parallel)
+saturated_multiplier: 10  # Saturated workload sends total_requests * multiplier

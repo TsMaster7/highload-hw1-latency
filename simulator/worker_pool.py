@@ -23,19 +23,28 @@ class WorkerPool:
         self.workers = workers
         self.service_time_s = service_time_ms / 1000.0
 
-    def _handle_request(self, request_id: int) -> float:
+    def _handle_request(self, request_id: int, submit_time: float | None = None) -> tuple[float, float]:
         """Simulate processing a single request.
 
-        Returns the measured latency in milliseconds.
+        Returns a tuple of (queue_time_ms, service_time_ms).
+        If submit_time is None, queue_time will be 0.0 (for backward compatibility).
         Adds +/-20 % jitter to the base service time so that latency
         distributions are realistic (not all identical).
         """
+        # Calculate queue wait time
+        pickup_time = time.monotonic()
+        if submit_time is not None:
+            queue_time_ms = (pickup_time - submit_time) * 1000.0
+        else:
+            queue_time_ms = 0.0
+
+        # Simulate service time
         jitter = random.uniform(0.8, 1.2)
         sleep_time = self.service_time_s * jitter
-        start = time.monotonic()
         time.sleep(sleep_time)
-        elapsed_ms = (time.monotonic() - start) * 1000.0
-        return elapsed_ms
+        service_time_ms = (time.monotonic() - pickup_time) * 1000.0
+
+        return queue_time_ms, service_time_ms
 
     def run(
         self,
@@ -48,13 +57,14 @@ class WorkerPool:
         shaping here).  Queue depth is unbounded in the baseline.
         """
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            submit_time = time.monotonic()
             futures = {
-                pool.submit(self._handle_request, rid): rid
+                pool.submit(self._handle_request, rid, submit_time): rid
                 for rid in request_ids
             }
             for future in as_completed(futures):
-                latency_ms = future.result()
-                collector.record(latency_ms)
+                queue_time_ms, service_time_ms = future.result()
+                collector.record_times(queue_time_ms, service_time_ms)
 
     # for my env using of this workload generator makes opposite effect and prevent the queue from overloading,
     # so I don't use it for now
@@ -72,9 +82,10 @@ class WorkerPool:
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             futures: dict = {}
             for rid in request_ids:
-                futures[pool.submit(self._handle_request, rid)] = rid
+                submit_time = time.monotonic()
+                futures[pool.submit(self._handle_request, rid, submit_time)] = rid
                 time.sleep(inter_arrival_ms / 1000.0)
 
             for future in as_completed(futures):
-                latency_ms = future.result()
-                collector.record(latency_ms)
+                queue_time_ms, service_time_ms = future.result()
+                collector.record_times(queue_time_ms, service_time_ms)
