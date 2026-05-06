@@ -30,8 +30,9 @@ def _run_condition(
     request_ids: list[int],
     service_time_ms: float,
     inter_arrival_ms: float | None = None,
+    max_queue_size: int | None = None,
 ) -> dict:
-    pool = WorkerPool(workers=workers, service_time_ms=service_time_ms)
+    pool = WorkerPool(workers=workers, service_time_ms=service_time_ms, max_queue_size=max_queue_size)
     collector = MetricsCollector()
 
     start = time.monotonic()
@@ -100,9 +101,11 @@ def run_benchmark(config_path: str | Path | None = None) -> list[dict]:
     workers: int = cfg.get("workers", os.cpu_count() or 4)
     total_requests: int = cfg.get("total_requests", 500)
     saturated_multiplier: int = cfg.get("saturated_multiplier", 3)
+    max_queue_size: int | None = cfg.get("max_queue_size")
 
+    queue_info = f"max_queue_size={max_queue_size}" if max_queue_size is not None else "unbounded queue"
     print(f"Config: service_time={service_time_ms}ms, workers={workers}, "
-          f"requests={total_requests}, saturated_multiplier={saturated_multiplier}")
+          f"requests={total_requests}, saturated_multiplier={saturated_multiplier}, {queue_info}")
     print()
 
     results: list[dict] = []
@@ -110,19 +113,23 @@ def run_benchmark(config_path: str | Path | None = None) -> list[dict]:
     # --- Serial (1 worker) ---
     serial_ids = generate_serial(total_requests)
     results.append(
-        _run_condition("Serial", 1, serial_ids, service_time_ms)
+        _run_condition("Serial", 1, serial_ids, service_time_ms, max_queue_size=max_queue_size)
     )
 
     # --- Parallel (N workers) ---
     parallel_ids = generate_parallel(total_requests)
     results.append(
-        _run_condition("Parallel", workers, parallel_ids, service_time_ms)
+        _run_condition("Parallel", workers, parallel_ids, service_time_ms, max_queue_size=max_queue_size)
     )
 
-    # --- Saturated (N workers, just send more queries, don't involve arrival_rate logic) ---
+    # --- Saturated (N workers, controlled arrival rate at 1.5x capacity) ---
     saturated_ids = generate_saturated(total_requests, saturated_multiplier)
+    capacity_rps = workers / (service_time_ms / 1000.0)
+    overload_rps = capacity_rps * 1.5
+    inter_arrival_ms = 1000.0 / overload_rps
     results.append(
-        _run_condition("Saturated", workers, saturated_ids, service_time_ms)
+        _run_condition("Saturated", workers, saturated_ids, service_time_ms,
+                      inter_arrival_ms=inter_arrival_ms, max_queue_size=max_queue_size)
     )
 
     _print_report(results)

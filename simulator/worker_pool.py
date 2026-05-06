@@ -19,9 +19,10 @@ if TYPE_CHECKING:
 class WorkerPool:
     """Fixed-size thread pool that simulates request processing."""
 
-    def __init__(self, workers: int, service_time_ms: float) -> None:
+    def __init__(self, workers: int, service_time_ms: float, max_queue_size: int | None = None) -> None:
         self.workers = workers
         self.service_time_s = service_time_ms / 1000.0
+        self.max_queue_size = max_queue_size  # None = unbounded (baseline behavior)
 
     def _handle_request(self, request_id: int, submit_time: float | None = None) -> tuple[float, float]:
         """Simulate processing a single request.
@@ -55,16 +56,39 @@ class WorkerPool:
 
         Requests are submitted as fast as possible (no arrival-rate
         shaping here).  Queue depth is unbounded in the baseline.
+
+        If max_queue_size is set, implements load shedding: requests
+        are rejected (HTTP 429-style) when queue is full.
         """
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             submit_time = time.monotonic()
-            futures = {
-                pool.submit(self._handle_request, rid, submit_time): rid
-                for rid in request_ids
-            }
+
+            if self.max_queue_size is None:
+                # Unbounded queue (baseline behavior)
+                futures = {
+                    pool.submit(self._handle_request, rid, submit_time): rid
+                    for rid in request_ids
+                }
+            else:
+                # Bounded queue with load shedding
+                futures = {}
+                active_count = 0
+                max_capacity = self.workers + self.max_queue_size
+
+                for rid in request_ids:
+                    if active_count < max_capacity:
+                        # Queue has space, submit the request
+                        futures[pool.submit(self._handle_request, rid, submit_time)] = rid
+                        active_count += 1
+                    else:
+                        # Queue is full, reject the request
+                        collector.record_rejection()
+
             for future in as_completed(futures):
                 queue_time_ms, service_time_ms = future.result()
                 collector.record_times(queue_time_ms, service_time_ms)
+                if self.max_queue_size is not None:
+                    active_count -= 1
 
     # for my env using of this workload generator makes opposite effect and prevent the queue from overloading,
     # so I don't use it for now
@@ -78,14 +102,45 @@ class WorkerPool:
 
         This models a saturated workload where requests keep arriving
         faster than the pool can drain them, causing queue buildup.
+
+        If max_queue_size is set, requests are rejected when queue is full.
         """
+        import threading
+
         with ThreadPoolExecutor(max_workers=self.workers) as pool:
             futures: dict = {}
-            for rid in request_ids:
-                submit_time = time.monotonic()
-                futures[pool.submit(self._handle_request, rid, submit_time)] = rid
-                time.sleep(inter_arrival_ms / 1000.0)
+            active_count = 0
+            count_lock = threading.Lock()
+
+            if self.max_queue_size is None:
+                # Unbounded queue
+                for rid in request_ids:
+                    submit_time = time.monotonic()
+                    futures[pool.submit(self._handle_request, rid, submit_time)] = rid
+                    time.sleep(inter_arrival_ms / 1000.0)
+            else:
+                # Bounded queue with load shedding
+                max_capacity = self.workers + self.max_queue_size
+
+                for rid in request_ids:
+                    with count_lock:
+                        current_active = active_count
+
+                    if current_active < max_capacity:
+                        submit_time = time.monotonic()
+                        future = pool.submit(self._handle_request, rid, submit_time)
+                        futures[future] = rid
+                        with count_lock:
+                            active_count += 1
+                    else:
+                        # Queue is full, reject the request
+                        collector.record_rejection()
+
+                    time.sleep(inter_arrival_ms / 1000.0)
 
             for future in as_completed(futures):
                 queue_time_ms, service_time_ms = future.result()
                 collector.record_times(queue_time_ms, service_time_ms)
+                if self.max_queue_size is not None:
+                    with count_lock:
+                        active_count -= 1
