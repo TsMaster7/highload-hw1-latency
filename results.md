@@ -34,12 +34,46 @@ Config: service_time=10ms, workers=1024, requests=2500, saturated_multiplier=10
 |---|---------|----------|----------|---|---|---|---|-----|
 | Serial   | 1       | 2500     | 0        | 12.05   | 14.63   | 82.31 r/s  | 30.373 s  | -   |
 | Parallel  | 1024    | 2500     | 0        | 12.07   | 14.62  | 24105.62 r/s  | 0.104 s  | 291 |
-| Saturated   | 1024    | 2500     | 0        | 70.40   | 420.56  | 11530.56 r/s   | 2.168 s  | 807 |
+| Saturated   | 1024    | 25000    | 0        | 70.40   | 420.56  | 11530.56 r/s   | 2.168 s  | 807 |
 
  - latency is degrading
  - p95 latency is degrading significantly
  - throughput is degrading
  - calculated length of the queue is increasing
+ - non-linear duration scaling (10 times more requests -> 20 times longer the execution time)
 
 ## Proposal for optimization
 - decrease number of workers to find the concurrency level at which throughput peaks without p95 latency exceeding 2× the serial baseline mean
+
+## Optimization results
+As a result of experiments it was discovered that the optimal number of workers is 256.
+Further reduction of workers pool can give us a bit better p95 latency, but it decreases throughput. 
+
+**Optimized configuration:** service_time=10ms, workers=256, requests=2500, saturated_multiplier=10
+
+**Benchmark results for the optimized configuration:**
+
+| Condition  | Workers | Requests | Rejected | Mean(ms)   | p95(ms)   |Throughput   |Duration   |
+|---|---------|----------|----------|---|---|---|---|
+| Serial   | 1       | 2500     | 0        | 11.93  | 14.64   | 83.09 r/s   | 30.088 s  |
+| Parallel   | 256     | 2500     | 0        | 12.18  | 16.66   | 17393.01 r/s  | 0.144 s  |
+| Saturated   | 256     | 25000    | 0        | 12.20   | 14.82  | 20463.10 r/s  | 1.222 s  |
+
+**Comparative table:**
+
+(first 2 rows actually represent the same configuration)
+
+| Condition   | Version  | Mean Latency (ms)  | p95 Latency (ms)  | Throughput (req/s)  | Workers |
+|---|---|---|---|---|---------|
+| Serial  | Baseline  | 12.05  | 14.63  | 82.31 r/s  | 1       |
+| Serial  |Improved   | 11.93  |14.64   | 83.09 r/s  | 1       |
+| Parallel  | Baseline  |12.07   | 14.62  | 24105.62 r/s  | 1024    |
+| Parallel  | Improved  | 12.18  |  16.66 | 17393.01 r/s  | 256     |
+| Saturated  |Baseline   |70.40   | 420.56  | 11530.56 r/s  | 1024    |
+| Saturated  | Improved  | 12.20  | 14.82  | 20463.10 r/s  | 256     |
+
+- latency got back to normal values
+- no saturation effect seen anymore
+- throughput slightly decreased for the 2500 requests workload, but significantly increased for the 25000 requests workload
+
+## Experimental analysis and criticism
