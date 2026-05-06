@@ -77,3 +77,14 @@ Further reduction of workers pool can give us a bit better p95 latency, but it d
 - throughput slightly decreased for the 2500 requests workload, but significantly increased for the 25000 requests workload
 
 ## Experimental analysis and criticism
+**The main conclusion:** Too Many Workers = Performance Degradation 
+
+We solved it reducing the number of workers.
+But:
+- Enormous extension of the workers pool creates artificial latency
+- It looks like saturation but is actually over-provisioning overhead
+- Currently, the benchmark only shows contention-based degradation (1024 workers), not queue-depth-based degradation (which should 
+  also happen with fewer workers + massive load). 
+- Now we measure only request handling time (_WorkerPool->_handle_request_ start-to-finish time), not the time which request waits in the queue
+- We need to fix the latency measurement to include queue wait time.
+- Then we can simulate and tackle queue-depth-based degradation 
