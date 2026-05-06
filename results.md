@@ -193,3 +193,7 @@ Implements bounded queue with load shedding - excess requests are rejected immed
 - ⚠️ **50% rejection rate** under extreme load (1.5× capacity) - acceptable trade-off
 
 **The optimization demonstrates the fundamental principle:** *Fast failure is better than slow failure*. Rejecting excess requests immediately is preferable to making all requests wait indefinitely, resulting in better overall system health and user experience.
+
+**Results files description**
+ - improved.txt should be compared to baseline.txt (basic benchmark, service latency only)
+ - improved_extended.txt should be compared to baseline_extended.txt (extended benchmark, queue and service latency measured)
